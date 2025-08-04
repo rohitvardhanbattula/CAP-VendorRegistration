@@ -1,3 +1,4 @@
+
 const cds = require('@sap/cds');
 const { or, and } = require('@sap-cloud-sdk/odata-v2');
 const fileUpload = require('express-fileupload');
@@ -8,6 +9,7 @@ const JSZip = require("jszip");
 cds.on('bootstrap', (app) => app.use(proxy()));
 const app = cds.app;
 const { executeHttpRequest } = require('@sap-cloud-sdk/http-client');
+const { getDestination } = require('@sap-cloud-sdk/connectivity');
 
 app.use(require("express").json());
 app.use(fileUpload());
@@ -130,12 +132,11 @@ try {
 
 async function getAppHostURLFromDestination() {
   
-  const res = await executeHttpRequest(
-    { destinationName: 'pdfsave-destination' },
-    { method: 'GET', url: '/' }
-  );
-  const cachedHost = res.config.baseURL.replace(/\/$/, '');
-  return cachedHost;
+  
+    const destination = await getDestination({ destinationName: 'pdfsavedes' }, { useCache: true });
+    console.log("destination fetched", destination)
+    if (!destination || !destination.url) throw new Error("Destination not found or invalid");
+    return destination.url.replace(/\/$/, '');
 }
 
 // BPA Workflow trigger
@@ -145,7 +146,7 @@ async function startBPAWorkflow({ name, email, id, phone, status, approver_email
   var host='';
   
   //host = `https://the-hackett-group-d-b-a-answerthink--inc--at-developmen3a1acfaf.cfapps.us10.hana.ondemand.com/`;
-  host= getAppHostURLFromDestination();
+  host= await getAppHostURLFromDestination();
   console.log(host);
   const fileLinks = files.map(file => `${host}/downloadFile/${file.ID}`);
   const fileZipLink = `${host}/downloadZip/${id}`;

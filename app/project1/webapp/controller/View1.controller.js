@@ -174,7 +174,7 @@ sap.ui.define([
           const formData = new FormData();
           formData.append("file", file);
           formData.append("vendorID", Id);
-          const sUrl=  `/uploadPDF`;
+          const sUrl= this._getUrl()+ `/uploadPDF`;
           const uploadResponse = await fetch(sUrl, {
             method: "POST",
             body: formData
