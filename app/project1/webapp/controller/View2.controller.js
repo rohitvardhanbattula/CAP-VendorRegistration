@@ -6,7 +6,9 @@ sap.ui.define([
   "use strict";
 
   return Controller.extend("project1.controller.View2", {
-
+_getUrl: function(){
+      return sap.ui.require.toUrl("project1");
+    },
     onInit: function () {
       const oRouter = this.getOwnerComponent().getRouter();
       const oRoute = oRouter.getRoute("View2");
@@ -27,7 +29,7 @@ sap.ui.define([
       this.getView().setModel(new JSONModel({ files: [] }), "attachmentModel");
 
       // Fetch attachments
-      fetch(`odata/v4/vendor/download?vendor_ID=${vendorId}`, {
+      fetch(this._getUrl() + `/odata/v4/vendor/download?vendor_ID=${vendorId}`, {
         method: "GET",
         headers: { "Content-Type": "application/json" }
       })
@@ -54,7 +56,7 @@ sap.ui.define([
     },
 
     _approvers: function (vendorId) {
-      fetch(`odata/v4/vendor/VendorApprovals?vendor_ID=${vendorId}`, {
+      fetch(this._getUrl() + `/odata/v4/vendor/VendorApprovals?vendor_ID=${vendorId}`, {
         method: "GET",
         headers: { "Content-Type": "application/json" }
       })
