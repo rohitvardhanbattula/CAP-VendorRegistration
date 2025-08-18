@@ -20,6 +20,7 @@ _getUrl: function(){
     },
 
     _onRouteMatched: function (oEvent) {
+      var that = this;
       const vendorId = oEvent.getParameter("arguments").vendor_Id;
 
       this.byId("vendorIdText").setText("Vendor ID: " + vendorId);
@@ -29,7 +30,7 @@ _getUrl: function(){
       this.getView().setModel(new JSONModel({ files: [] }), "attachmentModel");
 
       // Fetch attachments
-      fetch(this._getUrl() + `/odata/v4/vendor/download?vendor_ID=${vendorId}`, {
+      fetch(that._getUrl() + `/odata/v4/vendor/download?vendor_ID=${vendorId}`, {
         method: "GET",
         headers: { "Content-Type": "application/json" }
       })
