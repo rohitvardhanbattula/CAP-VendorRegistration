@@ -1,20 +1,26 @@
+
 const cds = require('@sap/cds');
+const { or, and } = require('@sap-cloud-sdk/odata-v2');
 const fileUpload = require('express-fileupload');
 const XLSX = require("xlsx");
 const axios = require('axios');
+
 const JSZip = require("jszip");
 cds.on('bootstrap', (app) => app.use(proxy()));
 const app = cds.app;
 const { executeHttpRequest } = require('@sap-cloud-sdk/http-client');
+const { getDestination } = require('@sap-cloud-sdk/connectivity');
 
 app.use(require("express").json());
 app.use(fileUpload());
 
 app.use((req, res, next) => {
-  if (req.method === 'HEAD'&& req.path === '/uploadPDF' && req.headers['x-csrf-token'] === 'Fetch') {
-    res.set('x-csrf-token', 'dummy-csrf-token'); // Set any string as dummy token
-    return res.status(200).end(); // Important: reply to HEAD/GET request
-  }
+  if ((req.method === 'HEAD' || req.method === 'GET') &&
+    req.path === '/uploadPDF' ||
+    req.headers['x-csrf-token'] === 'Fetch') {
+  res.set('x-csrf-token', 'dummy-csrf-token');
+  return res.status(200).end();
+}
   next();
 });
 
@@ -54,7 +60,7 @@ app.post('/uploadPDF', async (req, res) => {
   try {
     const vendorID = req.body.vendorID;
     if (!vendorID || !req.files || !req.files.file) return res.status(400).send("Missing vendorID or file");
-
+    console.log("Upload request files:", req.files);
     const uploadedFile = req.files.file;
     const base64Content = uploadedFile.data.toString('base64');
     await INSERT.into('my.vendor.VendorPDFs').entries({
@@ -83,17 +89,65 @@ app.post('/uploadPDF', async (req, res) => {
       }
     }, 10000);
 
-    res.send("File uploaded successfully. BPA will trigger in 1 hour if no more uploads.");
+    res.send("File uploaded successfully");
   } catch (err) {
     console.error("Upload error:", err);
     res.status(500).send("Upload failed");
   }
 });
 
+const { apiBusinessPartner } = require('./src/generated/API_BUSINESS_PARTNER');
+
+async function createBusinessPartnerInS4(vendor) {
+  const { businessPartnerApi } = apiBusinessPartner();
+
+try {
+  const partnerEntity = businessPartnerApi.entityBuilder()
+    .businessPartnerCategory("2")
+    .businessPartnerGrouping("BP02")
+    .firstName(vendor.name)
+    .personFullName(vendor.name)
+    .businessPartnerFullName(vendor.name)
+    .nameCountry("US")
+    .businessPartnerName(vendor.name)
+    .organizationBpName1(vendor.name)
+    .build(); // <- build the core entity first
+
+  console.log("Payload:", partnerEntity);
+
+  const result = await businessPartnerApi
+    .requestBuilder()
+    .create(partnerEntity)
+    .execute({ destinationName: 'vendordestination' });
+
+  console.log("Business Partner created:", result);
+  return result;
+} catch (error) {
+  console.error("Error creating Business Partner:", error.rootCause?.response?.data?.error?.message?.value || error.message);
+  throw error;
+}
+
+}
+
+
+async function getAppHostURLFromDestination() {
+  
+  
+    const destination = await getDestination({ destinationName: 'pdfsavedes' }, { useCache: true });
+    console.log("destination fetched", destination)
+    if (!destination || !destination.url) throw new Error("Destination not found or invalid");
+    return destination.url.replace(/\/$/, '');
+}
+
 // BPA Workflow trigger
 async function startBPAWorkflow({ name, email, id, phone, status, approver_email, approver_level, prior_comments }) {
+  
   const files = await SELECT.from('my.vendor.VendorPDFs').columns('ID', 'fileName').where({ vendor_ID: id });
-  const host = 'https://the-hackett-group-d-b-a-answerthink--inc--at-developmen3a1acfaf.cfapps.us10.hana.ondemand.com';
+  var host='';
+  
+  //host = `https://the-hackett-group-d-b-a-answerthink--inc--at-developmen3a1acfaf.cfapps.us10.hana.ondemand.com/`;
+  host= await getAppHostURLFromDestination();
+  console.log(host);
   const fileLinks = files.map(file => `${host}/downloadFile/${file.ID}`);
   const fileZipLink = `${host}/downloadZip/${id}`;
 
@@ -140,6 +194,7 @@ async function startBPAWorkflow({ name, email, id, phone, status, approver_email
     }
   );
 }
+
 
 // Trigger next approver
 async function triggerNextApprover(vendorID) {
@@ -195,6 +250,8 @@ app.post('/bpa-callback', async (req, res) => {
       await triggerNextApprover(vendorID);
     } else {
       await UPDATE('my.vendor.Vendors').set({ status: 'FINAL_APPROVED' }).where({ ID: vendorID });
+      const vendor = await SELECT.one.from('my.vendor.Vendors').where({ ID: vendorID });
+      await createBusinessPartnerInS4(vendor);
       return res.send({ message: "All levels approved." });
     }
 
@@ -207,8 +264,11 @@ app.post('/bpa-callback', async (req, res) => {
 
 module.exports = cds.service.impl(async (srv) => {
   // Create vendor + approvals
+  srv.on('GET', '/', async () => {
+    return { message: 'App Root reachable' };
+  });
+
   srv.on('VendorCreation', async (req) => {
-    
     const { ID, name, email, phone } = req.data;
     if (!name || !email || !phone || !ID) return req.error(400, 'Incomplete data');
 
@@ -267,5 +327,4 @@ module.exports = cds.service.impl(async (srv) => {
     }));
 
   });
-
 });
